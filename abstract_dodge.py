@@ -8,8 +8,9 @@ from abc import ABC, abstractmethod
 
 from utilities import _randuniform, _randint, unpack
 from ML import *
+from itertools import product
 from transformation import *
-
+from random import seed
 
 
 class Node(object):
@@ -128,7 +129,7 @@ class abstract_dodge(ABC):
             if isinstance(v, float):
                 mutated_params[k] = _randuniform(best_params[k], (best_params[k] + worst_params[k]) / 2)
             elif isinstance(v, int):
-                mutated_params[k] = _randint(best_params[k], (best_params[k] + worst_params[k]) / 2)
+                mutated_params[k] = _randint(best_params[k], int((best_params[k] + worst_params[k]) / 2 ) )
             else:
                 mutated_params[k] = best_params[k]
 
@@ -166,7 +167,8 @@ class abstract_dodge(ABC):
 
         self.tree_of_options.sort(key=lambda x: x.weight, reverse=True)
 
-        print("weighted nodes = ", [x.weight for x in self.tree_of_options])
+        print("weighted nodes = ", [str(x.weight)+'-'+str(x.score)+'-'+str(self.name(x.classifier)) + '-' + str(self.name(x.preprocessor))
+                                    for x in self.tree_of_options])
         best_nodes = self.get_best_nodes()
 
 
@@ -192,9 +194,9 @@ class abstract_dodge(ABC):
 
         elif current_score != node.get_error_score(self.goal):
 
-            if abs(current_score - node.score) > self.epsilon:
+            if current_score - node.score < self.epsilon:
                 node.increment_weight()
-            else:
+            elif current_score - node.score > self.epsilon:
                 node.decrement_weight()
 
         node.score = current_score
@@ -203,7 +205,9 @@ class abstract_dodge(ABC):
 
         n1 = self.N1
 
+        print('# ', len(self.tree_of_options))
         while n1 > 0:
+            print('n1 = ',n1)
             for node in self.tree_of_options:
                 self.evaluate(node, self.train.sample(self.sample).copy(deep=True), self.test.copy(deep=True))
 
@@ -248,13 +252,3 @@ class abstract_dodge(ABC):
             return None
 
         print("Retured")
-
-
-
-
-
-
-
-
-
-
