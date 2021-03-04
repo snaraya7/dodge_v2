@@ -23,18 +23,13 @@ class dodge_sk(abstract_dodge):
         np.random.seed(mn)
         seed(mn)
 
-        # MLs =   [NB   , [KNN] * 20, [RF] * 50, [DT] * 30, [LR] * 50]
-        # preprocess = [standard_scaler] # , minmax_scaler, maxabs_scaler, [robust_scaler] * 2, kernel_centerer,
-        # [quantile_transform] * 2, normalizer, [binarize] * 2]
+        MLs =   [NB   , [KNN] * 5, [RF] * 5, [DT] * 5, [LR] * 5]
 
+        # MLs = [NB   , [KNN] * 5, [RF] * 5, [DT] * 5, [LR] * 5]
+        preprocess = [standard_scaler  , minmax_scaler, maxabs_scaler, [robust_scaler] * 10,
+        [quantile_transform] * 10, normalizer, [binarize] * 10]
 
-        preprocess = [standard_scaler, [robust_scaler] * 3]
-        # , minmax_scaler, maxabs_scaler, [robust_scaler] * 20, kernel_centerer,
-        #    [quantile_transform] * 200, normalizer, [binarize] * 100]
-
-
-
-        MLs = [ [KNN] * 5, [LR] * 5 ]
+        # pre-processing error  Kernel matrix must be a square matrix. Input is a 50x14 matrix. KernelCenterer() KernelCenterer
 
         preprocess_list = unpack(preprocess)
         MLs_list = unpack(MLs)
@@ -56,34 +51,32 @@ class dodge_sk(abstract_dodge):
         :return:
         """
 
+
         current_score = node.get_error_score(goal)
 
+
+        temp_train_changes = train_changes.copy(deep=True)
+        temp_tune_changes = tune_changes.copy(deep=True)
+
+
         try:
-            temp_train_changes = train_changes.copy(deep=True)
-            temp_tune_changes = tune_changes.copy(deep=True)
-
-            train_buggy = temp_train_changes.Buggy.values
-            temp_train_changes = temp_train_changes.drop(labels=['Buggy'], axis=1)
-
-            tune_buggy = temp_tune_changes.Buggy.values
-            temp_tune_changes = temp_tune_changes.drop(labels=['Buggy'], axis=1)
-
-            temp_train_changes =  transform(temp_train_changes, node.preprocessor)
+            temp_train_changes = transform(temp_train_changes, node.preprocessor)
             temp_tune_changes = transform(temp_tune_changes, node.preprocessor)
+        except Exception as e1:
+            print("pre-processing error ", e1, node.preprocessor)
 
-            temp_train_changes['Buggy'] = train_buggy
-            temp_tune_changes['Buggy'] = tune_buggy
 
-
+        try:
             trainX = temp_train_changes.drop(labels=['Buggy'], axis=1)
             trainY = temp_train_changes.Buggy
-
 
             node.classifier.fit(trainX, trainY)
             F = computeMeasures(temp_tune_changes, node.classifier, [], [0 for x in range(0, len(temp_tune_changes))])
             current_score = float(F[goal][0])
-        except Exception as e:
-            print("Exception Node evaluation ", e)
+
+        except Exception as e2:
+            print("\tclassifier error ", e2, node.classifier, node.preprocessor)
+            # print(temp_train_changes)
 
         return current_score
 
