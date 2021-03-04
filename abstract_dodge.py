@@ -17,7 +17,7 @@ class Node(object):
 
     def __init__(self, classifier, preprocessor):
 
-        self.weight = None
+        self.weight = 1000
         self.classifier = classifier
         self.preprocessor = preprocessor
         self.score = None
@@ -34,6 +34,10 @@ class Node(object):
 
     def get_weight(self):
         return self.weight
+
+
+    def set_score(self, score):
+        self.score = score
 
     def increment_weight(self):
         if self.weight is None:
@@ -74,6 +78,7 @@ class abstract_dodge(ABC):
         self.train = train
         self.test = test
         self.sample = sample
+        self.mutated = 0
         super().__init__()
 
     @abstractmethod
@@ -103,14 +108,14 @@ class abstract_dodge(ABC):
 
     def get_worst_node(self, best_node):
 
-        best_score = best_node.score
         worst_node = None
+        worst_weight_so_far = best_node.weight
 
-        for top in self.tree_of_options:
+        for current_node in self.tree_of_options:
 
-            if top.score > best_score and self.is_same_type(best_node, top):
-                worst_node = top
-                best_score = top.score
+            if current_node.weight < worst_weight_so_far and self.is_same_type(best_node, current_node):
+                worst_node = current_node
+                worst_weight_so_far = current_node.weight
 
 
         return worst_node
@@ -147,10 +152,16 @@ class abstract_dodge(ABC):
             else:
                 mutated_params[k] = best_params[k]
 
+        # for k,v in best_params.items():
+        #     print('best param = ', k,v)
+        # for k,v in mutated_params.items():
+        #     print('mutated param = ', k,v)
 
-        best_classifier.set_params(**mutated_params)
+        mutated_classifier = new_classifier(best_classifier)
+        mutated_classifier.set_params(**mutated_params)
 
-        return best_classifier
+
+        return mutated_classifier
 
     def name(self, item):
         return str(item.__class__.__name__)
@@ -170,33 +181,52 @@ class abstract_dodge(ABC):
             else:
                 mutated_params[k] = best_params[k]
 
-            best_preprocessor.set_params(**mutated_params)
-            return best_preprocessor
-        else:
-            return best_preprocessor
 
-    def mutate(self):
+        mutated_preprocessor = new_preprocessor(best_preprocessor)
+        mutated_preprocessor.set_params(**best_params)
+
+        return mutated_preprocessor
+
+
+    def to_string(self, old_node):
+
+        return str(old_node.classifier.get_params()) + '-' + str(old_node.preprocessor) + '-' + str(old_node.preprocessor.get_params())
+
+    def is_new_node(self, new_node):
+
+
+        for old_node in self.tree_of_options:
+
+            if self.to_string(old_node) == self.to_string(new_node):
+                return False
+
+        return True
+
+    def mutate(self, best_nodes):
 
         mutated_nodes = []
-
-        self.tree_of_options.sort(key=lambda x: x.weight, reverse=True)
-
-        print("weighted nodes = ", [str(x.weight)+'-'+str(x.score)+'-'+str(self.name(x.classifier)) + '-' + str(self.name(x.preprocessor))
-                                    for x in self.tree_of_options])
-
-        best_nodes = self.get_best_nodes()
-
-        print('# best nodes = ', len(best_nodes))
-
+        # print("weighted nodes = ", [str(x.weight)+'-'+str(x.score)+'-'+str(self.name(x.classifier)) + '-' + str(self.name(x.preprocessor))
+        #                             for x in self.tree_of_options])
 
         for best_node in best_nodes:
 
             worst_node = self.get_worst_node(best_node)
-            print('worst node = ',worst_node)
 
             if worst_node is not None:
-                mutated_nodes.append(Node(self.mutate_classifier(best_node.classifier, worst_node.classifier),
-                                          self.mutate_preprocessor(best_node.preprocessor, worst_node.preprocessor)))
+
+                # print("wt best, worst = ", best_node.weight, worst_node.weight)
+                # print("\t sc best, worst = ", best_node.score, worst_node.score)
+                # print()
+
+                mutated_node = Node(self.mutate_classifier(best_node.classifier, worst_node.classifier),
+                                          self.mutate_preprocessor(best_node.preprocessor, worst_node.preprocessor))
+
+                if self.is_new_node(mutated_node):
+
+                    # print('worst node = ', worst_node)
+
+                    mutated_nodes.append(mutated_node)
+                    self.mutated += 1
 
         return mutated_nodes
 
@@ -209,27 +239,23 @@ class abstract_dodge(ABC):
         current_score = self.compute_model_performance(node, train_changes, tune_changes, self.goal)
         previous_score = node.score
 
-        if node.score is None:
-            node.score = current_score
-            node.increment_weight()
-
-        elif current_score != node.get_error_score(self.goal):
+        if previous_score is not None and current_score != node.get_error_score(self.goal):
 
             delta = abs(previous_score - current_score)
 
             if delta > self.epsilon:
                 if current_score < previous_score:
                     node.increment_weight()
-            else:
-                node.decrement_weight()
+                else:
+                    node.decrement_weight()
 
-        node.score = current_score
+
+        node.set_score(current_score)
 
     def get_best_settings(self):
 
-        print("Returning best setting...")
-
         self.tree_of_options.sort(key=lambda x: x.score, reverse=False)
+        print("Returning best setting...", self.tree_of_options[0].score, self.tree_of_options[len(self.tree_of_options) - 1].score )
         return self.tree_of_options[0]
 
 
@@ -238,11 +264,11 @@ class abstract_dodge(ABC):
 
         n1 = self.N1
 
-        print('Evaluating...')
+        # print('Evaluating...')
         print('Tree of options = ', len(self.tree_of_options))
 
         while n1 > 0:
-            print('n1 = ',n1)
+            print('n1 = ',n1, len(self.tree_of_options)) # , [str(x.score)+':'+str(x.weight) for x in self.tree_of_options])
             for node in self.tree_of_options:
                 self.evaluate(node, self.train.sample(self.sample).copy(deep=True), self.test.copy(deep=True))
 
@@ -252,28 +278,21 @@ class abstract_dodge(ABC):
         print('Mutating...')
         n2 = self.N2
 
-        previous_mutated_node = None
+        self.tree_of_options.sort(key=lambda x: x.weight, reverse=True)
+        best_nodes = self.get_best_nodes()
+
         while n2 > 0:
 
-            print('n2 = ',n2)
+            print('# best nodes = ', len(best_nodes)) # , [str(x.score)+':'+str(x.weight) for x in self.tree_of_options])
 
-            mutated_nodes = self.mutate()
+            print('n2 = ',n2, len(self.tree_of_options), 'mutated = ',self.mutated)
 
-            if len(mutated_nodes) == 0:
-                break
-
+            mutated_nodes = self.mutate(best_nodes)
 
             for mutated_node in mutated_nodes:
+                self.tree_of_options.append(mutated_node)
+                self.evaluate(mutated_node, self.train.sample(self.sample).copy(deep=True), self.test.copy(deep=True))
 
-
-                if self.is_same_node(mutated_node, previous_mutated_node) == False  :
-
-                    self.tree_of_options.append(mutated_node)
-                    self.evaluate(mutated_node, self.train.sample(self.sample).copy(deep=True), self.test.copy(deep=True))
-                else:
-                    print("Nothing to mutate...")
-
-                previous_mutated_node = mutated_node
 
             n2 -= 1
 
@@ -287,14 +306,10 @@ class abstract_dodge(ABC):
 
         print('Building tree of options...')
         self.build_tree_of_options()
-
-
-
         self.evaluate_nodes()
 
+        return self.get_best_settings().classifier, self.get_best_settings().preprocessor
 
-        print(self.get_best_settings())
-        print("Returned best setting")
 
     def is_same_node(self, mutated_node, previous_mutated_node):
 
@@ -309,18 +324,7 @@ class abstract_dodge(ABC):
             elif str(previous_mutated_node.preprocessor.get_params()) != str(mutated_node.preprocessor.get_params()):
                 return False
             else:
+
                 return True
-
-
-
-
-
-
-
-
-
-
-
-
 
 
